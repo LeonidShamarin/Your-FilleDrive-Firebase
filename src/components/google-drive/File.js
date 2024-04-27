@@ -64,7 +64,7 @@ export default function File({ file }) {
       </a>
       {currentUser.uid === file.userId && (
         <button
-          className="btn btn-danger ml-auto align-items-center"
+          className="btn btn-danger ml-auto align-items-center btn-sm"
           onClick={handleDelete}
         >
           <FontAwesomeIcon icon={faTrash} />
