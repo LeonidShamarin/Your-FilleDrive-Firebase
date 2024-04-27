@@ -5,8 +5,8 @@ You can view the public version of Application here:[Your-FileDrive](https://you
 
 ## Key Features
 - **User Authentication**: Users can securely authenticate themselves to access the application.
-- **Folder Creation**: Authenticated users can create folders to organize their files systematically.
-- **File Upload**: Users can upload files to the platform, allowing them to store and manage their documents conveniently.
+- **Folder Creation**: Authenticated users can create, and delete folders to organize their files systematically.
+- **File Upload**: Users can upload files to the platform, and delete to, allowing them to store and manage their documents conveniently.
 
 ## Technologies Used
 - **React**: The frontend of the application is built using React, providing a dynamic and responsive user interface.
