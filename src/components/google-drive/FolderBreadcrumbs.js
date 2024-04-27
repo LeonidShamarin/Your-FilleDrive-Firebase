@@ -4,7 +4,7 @@ import { Link } from "react-router-dom";
 import { ROOT_FOLDER } from "./../../hooks/useFolder";
 
 export default function FolderBreadcrumbs({ currentFolder }) {
-  let path = currentFolder === ROOT_FOLDER ? [] : [ROOT_FOLDER];
+  let path = currentFolder === ROOT_FOLDER ? [currentFolder] : [ROOT_FOLDER];
   if (currentFolder) path = [...path, ...currentFolder.path];
 
   return (

@@ -24,17 +24,18 @@ export default function AddFolderButton({ currentFolder }) {
 
     if (currentFolder == null) return;
 
-    const path = [...currentFolder.path];
-    if (currentFolder !== ROOT_FOLDER) {
-      path.push({ name: currentFolder.name, id: currentFolder.id });
-    }
+      // Prepare the path for the new folder
+      const newPath = currentFolder === ROOT_FOLDER ? [] : [...currentFolder.path];
+      if (currentFolder !== ROOT_FOLDER) {
+        newPath.push({ name: currentFolder.name, id: currentFolder.id });
+      }
 
     //Create a folder in the database
     database.folders.add({
       name: name,
       parentId: currentFolder.id,
       userId: currentUser.uid,
-      path: path,
+      path: newPath,
       createdAt: database.getCurrentTimestamp(),
     });
     setName("");
@@ -43,7 +44,12 @@ export default function AddFolderButton({ currentFolder }) {
 
   return (
     <>
-      <Button onClick={openModal} variant="outline-success" size="sm" className="m-2">
+      <Button
+        onClick={openModal}
+        variant="outline-success"
+        size="sm"
+        className="m-2"
+      >
         <FontAwesomeIcon icon={faFolderPlus} />
       </Button>
       <Modal show={open} onHide={closeModal}>
