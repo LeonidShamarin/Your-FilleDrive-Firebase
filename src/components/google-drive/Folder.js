@@ -2,20 +2,11 @@ import React from "react";
 import { Link } from "react-router-dom";
 import { Button } from "react-bootstrap";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
-import { faFolder, faTrash } from "@fortawesome/free-solid-svg-icons";
-import { useAuth } from "../../context/AuthContext";
-import { database } from "../../firebase";
+import { faFolder } from "@fortawesome/free-solid-svg-icons";
+
 
 export default function Folder({ folder }) {
-  const { currentUser } = useAuth();
 
-  const handleDelete = async () => {
-    try {
-      await database.folders.doc(folder.id).delete();
-    } catch (error) {
-      console.error("Error deleting folder:", error);
-    }
-  };
 
   return (
     <Button
@@ -29,15 +20,7 @@ export default function Folder({ folder }) {
     >
       <FontAwesomeIcon icon={faFolder} className="mr-2 px-2" />
       {folder.name}
-      {currentUser.uid === folder.userId && (
-        <button
-          className="btn btn-danger ml-2 align-items-center btn-sm"
-          onClick={handleDelete}
-          style={{ marginLeft: "5px" }}
-        >
-          <FontAwesomeIcon icon={faTrash} />
-        </button>
-      )}
+      
     </Button>
   );
 }
