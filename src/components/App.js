@@ -1,13 +1,12 @@
 import React from "react";
-import Signup from "./authentication/Signup";
+import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 
 import { AuthProvider } from "../context/AuthContext";
-import { BrowserRouter, Routes, Route } from "react-router-dom";
-import Profile from "./authentication/Profile";
-import Login from "./authentication/Login";
-
 import PrivateRoute from "./authentication/PrivateRoute";
+import Signup from "./authentication/Signup";
+import Login from "./authentication/Login";
 import ForgotPassword from "./authentication/ForgotPassword";
+import Profile from "./authentication/Profile";
 import UpdateProfile from "./authentication/UpdateProfile";
 import Dashboard from "./google-drive/Dashboard";
 
@@ -17,13 +16,8 @@ function App() {
       <AuthProvider>
         <Routes>
           {/* Drive */}
+          <Route path="/" element={<PrivateRoute Component={Dashboard} />} />
           <Route
-            exact
-            path="/"
-            element={<PrivateRoute Component={Dashboard} />}
-          />
-          <Route
-            exact
             path="/folder/:folderId"
             element={<PrivateRoute Component={Dashboard} />}
           />
@@ -34,10 +28,14 @@ function App() {
             path="/update-profile"
             element={<PrivateRoute Component={UpdateProfile} />}
           />
+
           {/* Auth */}
           <Route path="/signup" element={<Signup />} />
           <Route path="/login" element={<Login />} />
           <Route path="/forgot-password" element={<ForgotPassword />} />
+
+          {/* Anything else belongs to the drive, which redirects if signed out. */}
+          <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </AuthProvider>
     </BrowserRouter>

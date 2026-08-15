@@ -11,9 +11,9 @@ export function AuthProvider({ children }) {
     const [currentUser, setCurrentUser] = useState()
     const [loading, setLoading] = useState(true)
 
-  //! Якщо firebase не захочу використовувати а мені з сервера буде приходити, ці дві 
-  //! signup,login і решта  функції замінити
-  
+  // Every call into Firebase Auth lives in this file. Swapping Firebase for
+  // another backend means rewriting the functions below and nothing else.
+
   function signup(email, password) {
     return auth.createUserWithEmailAndPassword(email, password)
   }

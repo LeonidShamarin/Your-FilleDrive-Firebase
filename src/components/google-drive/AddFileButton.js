@@ -1,155 +1,159 @@
 import React, { useState } from "react";
 import ReactDom from "react-dom";
-import { faFileUpload } from "@fortawesome/free-solid-svg-icons";
+import { faFileArrowUp, faXmark } from "@fortawesome/free-solid-svg-icons";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
+import { v4 as uuidV4 } from "uuid";
 
 import { useAuth } from "../../context/AuthContext";
 import { storage, database } from "../../firebase";
 import { ROOT_FOLDER } from "../../hooks/useFolder";
-import { v4 as uuidV4 } from "uuid";
-import { ProgressBar, Toast } from "react-bootstrap";
+
+/**
+ * Storage path of the folder the file is being dropped into.
+ * `folder.path` holds ancestor objects, so it has to be mapped to names —
+ * joining the objects directly produces "[object Object]" segments.
+ */
+function folderStoragePath(currentFolder) {
+  const isRoot = currentFolder === ROOT_FOLDER || currentFolder.id == null;
+  const segments = isRoot
+    ? []
+    : [...(currentFolder.path ?? []).map((f) => f.name), currentFolder.name];
+  return segments.join("/");
+}
 
 export default function AddFileButton({ currentFolder }) {
   const [uploadingFiles, setUploadingFiles] = useState([]);
-
   const { currentUser } = useAuth();
 
-  function handleUpload(e) {
-    const file = e.target.files[0];
-    if (currentFolder == null || file == null) return;
+  function removeUpload(id) {
+    setUploadingFiles((previous) =>
+      previous.filter((uploadFile) => uploadFile.id !== id)
+    );
+  }
 
+  function updateUpload(id, changes) {
+    setUploadingFiles((previous) =>
+      previous.map((uploadFile) =>
+        uploadFile.id === id ? { ...uploadFile, ...changes } : uploadFile
+      )
+    );
+  }
+
+  function uploadOne(file) {
     const id = uuidV4();
-    setUploadingFiles((prevUploadingFiles) => [
-      ...prevUploadingFiles,
-      {
-        id: id,
-        name: file.name,
-        progress: 0,
-        error: false,
-      },
+    setUploadingFiles((previous) => [
+      ...previous,
+      { id, name: file.name, progress: 0, error: false },
     ]);
 
-    const filePath =
-      currentFolder === ROOT_FOLDER
-        ? `${currentFolder.path.join("/")}/${file.name}`
-        : `${currentFolder.path.join("/")}/${currentFolder.name}/${file.name}`;
+    const prefix = folderStoragePath(currentFolder);
+    const fullPath = `/files/${currentUser.uid}/${
+      prefix ? `${prefix}/` : ""
+    }${file.name}`;
 
-    const uploadTask = storage
-      .ref(`/files/${currentUser.uid}/${filePath}`)
-      .put(file);
+    const uploadTask = storage.ref(fullPath).put(file);
 
     uploadTask.on(
       "state_changed",
       (snapshot) => {
-        const progress = snapshot.bytesTransferred / snapshot.totalBytes;
-        setUploadingFiles((prevUploadingFiles) => {
-          return prevUploadingFiles.map((uploadFile) => {
-            if (uploadFile.id === id) {
-              return {
-                ...uploadFile,
-                progress: progress,
-              };
-            }
-            return uploadFile;
-          });
+        updateUpload(id, {
+          progress: snapshot.bytesTransferred / snapshot.totalBytes,
         });
       },
-      () => {
-        setUploadingFiles((prevUploadingFiles) => {
-          return prevUploadingFiles.map((uploadFile) => {
-            if (uploadFile.id === id) {
-              return {
-                ...uploadFile,
-                error: true,
-              };
-            }
-            return uploadFile;
-          });
-        });
+      (uploadError) => {
+        console.error("Upload failed:", uploadError);
+        updateUpload(id, { error: true });
       },
-      () => {
-        setUploadingFiles((prevUploadingFiles) => {
-          return prevUploadingFiles.filter((uploadFile) => {
-            return uploadFile.id !== id;
-          });
-        });
-
-        uploadTask.snapshot.ref.getDownloadURL().then((url) => {
-          database.files
+      async () => {
+        try {
+          const url = await uploadTask.snapshot.ref.getDownloadURL();
+          // Same name in the same folder means a replacement, not a duplicate.
+          const existingFiles = await database.files
             .where("name", "==", file.name)
             .where("userId", "==", currentUser.uid)
             .where("folderId", "==", currentFolder.id)
-            .get()
-            .then((existingFiles) => {
-              const existingFile = existingFiles.docs[0];
-              if (existingFile) {
-                existingFile.ref.update({ url: url });
-              } else {
-                database.files.add({
-                  url: url,
-                  name: file.name,
-                  createdAt: database.getCurrentTimestamp(),
-                  folderId: currentFolder.id,
-                  userId: currentUser.uid,
-                });
-              }
+            .get();
+
+          const existingFile = existingFiles.docs[0];
+          if (existingFile) {
+            await existingFile.ref.update({ url });
+          } else {
+            await database.files.add({
+              url,
+              name: file.name,
+              createdAt: database.getCurrentTimestamp(),
+              folderId: currentFolder.id,
+              userId: currentUser.uid,
             });
-        });
+          }
+          removeUpload(id);
+        } catch (saveError) {
+          console.error("Could not record the uploaded file:", saveError);
+          updateUpload(id, { error: true });
+        }
       }
     );
   }
 
+  function handleUpload(e) {
+    const files = Array.from(e.target.files ?? []);
+    if (currentFolder != null) {
+      files.forEach(uploadOne);
+    }
+    // Clearing the input lets the same file be picked again right after.
+    e.target.value = "";
+  }
+
   return (
     <>
-      <label className="btn btn-outline-success btn-sm m-0 mr-2">
-        <FontAwesomeIcon icon={faFileUpload} />
-
+      <label className="btn-app btn-app--primary" style={{ marginBottom: 0 }}>
+        <FontAwesomeIcon icon={faFileArrowUp} />
+        Upload
         <input
           type="file"
+          multiple
           onChange={handleUpload}
-          style={{ opacity: 0, position: "absolute", left: "-9999px" }}
+          disabled={currentFolder == null}
+          style={{ position: "absolute", left: "-9999px", opacity: 0 }}
         />
       </label>
+
       {uploadingFiles.length > 0 &&
         ReactDom.createPortal(
-          <div
-            style={{
-              position: "absolute",
-              bottom: "1rem",
-              right: "1rem",
-              maxWidth: "250px",
-            }}
-          >
+          <div className="upload-stack">
             {uploadingFiles.map((file) => (
-              <Toast
-                key={file.id}
-                onClose={() => {
-                  setUploadingFiles((prevUploadingFiles) => {
-                    return prevUploadingFiles.filter((uploadFile) => {
-                      return uploadFile.id !== file.id;
-                    });
-                  });
-                }}
-              >
-                <Toast.Header
-                  closeButton={file.error}
-                  className="text-truncate w-100 d-block"
-                >
-                  {file.name}
-                </Toast.Header>
-                <Toast.Body>
-                  <ProgressBar
-                    animated={!file.error}
-                    variant={file.error ? "danger" : "primary"}
-                    now={file.error ? 100 : file.progress * 100}
-                    label={
-                      file.error
-                        ? "Error"
-                        : `${Math.round(file.progress * 100)} %`
-                    }
+              <div className="upload-card" key={file.id}>
+                <div className="upload-card__head">
+                  <span className="upload-card__name" title={file.name}>
+                    {file.name}
+                  </span>
+                  {file.error && (
+                    <button
+                      type="button"
+                      className="upload-card__close"
+                      onClick={() => removeUpload(file.id)}
+                      aria-label="Dismiss"
+                    >
+                      <FontAwesomeIcon icon={faXmark} />
+                    </button>
+                  )}
+                </div>
+                <div className="upload-bar">
+                  <div
+                    className={`upload-bar__fill${
+                      file.error ? " upload-bar__fill--error" : ""
+                    }`}
+                    style={{
+                      width: file.error ? "100%" : `${file.progress * 100}%`,
+                    }}
                   />
-                </Toast.Body>
-              </Toast>
+                </div>
+                <div className="upload-card__status">
+                  {file.error
+                    ? "Upload failed"
+                    : `${Math.round(file.progress * 100)} %`}
+                </div>
+              </div>
             ))}
           </div>,
           document.body

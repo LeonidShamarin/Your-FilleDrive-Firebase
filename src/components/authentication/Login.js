@@ -1,7 +1,7 @@
 import React, { useRef, useState } from "react";
-import { Form, Button, Card, Alert } from "react-bootstrap";
-import { useAuth } from "../../context/AuthContext";
 import { Link, useNavigate } from "react-router-dom";
+
+import { useAuth } from "../../context/AuthContext";
 import CenteredContainer from "./CenteredContainer";
 
 export default function Login() {
@@ -10,49 +10,68 @@ export default function Login() {
   const { login } = useAuth();
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
-  const history = useNavigate();
+  const navigate = useNavigate();
+
   async function handleSubmit(e) {
     e.preventDefault();
 
+    setError("");
+    setLoading(true);
     try {
-      setError("");
-      setLoading(true);
       await login(emailRef.current.value, passwordRef.current.value);
-      history("/");
-    } catch {
-      setError("Failed to log in");
+      // Navigation unmounts this screen, so nothing is set after it.
+      navigate("/");
+    } catch (loginError) {
+      setError(
+        loginError.code === "auth/too-many-requests"
+          ? "Too many attempts. Try again later."
+          : "Wrong email or password"
+      );
+      setLoading(false);
     }
-
-    setLoading(false);
   }
 
   return (
     <CenteredContainer>
-      <Card>
-        <Card.Body>
-          <h2 className="text-center mb-4">Log In</h2>
-          {error && <Alert variant="danger">{error}</Alert>}
-          <Form onSubmit={handleSubmit}>
-            <Form.Group id="email">
-              <Form.Label>Email</Form.Label>
-              <Form.Control type="email" ref={emailRef} required />
-            </Form.Group>
-            <Form.Group id="password">
-              <Form.Label>Password</Form.Label>
-              <Form.Control type="password" ref={passwordRef} required />
-            </Form.Group>
-            <Button disabled={loading} className="w-100 mt-3" type="submit">
-              Log In
-            </Button>
-          </Form>
-          <div className="w-100 text-center mt-3">
-            <Link to="/forgot-password">Forgot Password?</Link>
+      <div className="auth-card">
+        <h1>Log in</h1>
+        {error && <p className="alert-app alert-app--error">{error}</p>}
+        <form onSubmit={handleSubmit}>
+          <div className="auth-field">
+            <label htmlFor="login-email">Email</label>
+            <input
+              id="login-email"
+              type="email"
+              ref={emailRef}
+              autoComplete="email"
+              required
+            />
           </div>
-        </Card.Body>
-      </Card>
-      <div className="w-100 text-center mt-2">
-        Need an account? <Link to="/signup">Sign Up</Link>
+          <div className="auth-field">
+            <label htmlFor="login-password">Password</label>
+            <input
+              id="login-password"
+              type="password"
+              ref={passwordRef}
+              autoComplete="current-password"
+              required
+            />
+          </div>
+          <button
+            type="submit"
+            className="btn-app btn-app--primary btn-app--block"
+            disabled={loading}
+          >
+            {loading ? "Logging in…" : "Log in"}
+          </button>
+        </form>
+        <p className="auth-footer">
+          <Link to="/forgot-password">Forgot your password?</Link>
+        </p>
       </div>
+      <p className="auth-footer">
+        Need an account? <Link to="/signup">Sign up</Link>
+      </p>
     </CenteredContainer>
   );
 }

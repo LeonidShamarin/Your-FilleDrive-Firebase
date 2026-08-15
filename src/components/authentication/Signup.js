@@ -1,8 +1,14 @@
 import React, { useRef, useState } from "react";
-import { Form, Button, Card, Alert } from "react-bootstrap";
-import { useAuth } from "../../context/AuthContext";
 import { Link, useNavigate } from "react-router-dom";
+
+import { useAuth } from "../../context/AuthContext";
 import CenteredContainer from "./CenteredContainer";
+
+const ERROR_BY_CODE = {
+  "auth/email-already-in-use": "That email is already registered",
+  "auth/invalid-email": "Invalid email address",
+  "auth/weak-password": "Password must be at least 6 characters",
+};
 
 export default function Signup() {
   const emailRef = useRef();
@@ -11,63 +17,79 @@ export default function Signup() {
   const { signup } = useAuth();
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
-  const history = useNavigate();
+  const navigate = useNavigate();
 
   async function handleSubmit(e) {
     e.preventDefault();
 
     if (passwordRef.current.value !== passwordConfirmRef.current.value) {
-      return setError("Passwords do not match");
+      setError("Passwords do not match");
+      return;
     }
 
+    setError("");
+    setLoading(true);
     try {
-      setError("");
-      setLoading(true);
       await signup(emailRef.current.value, passwordRef.current.value);
-      history("/");
-    } catch (error) {
-      let errorMessage = "Failed to create an account";
-      if (error.code === 'auth/email-already-in-use') {
-        errorMessage = "Email already in use";
-      } else if (error.code === 'auth/invalid-email') {
-        errorMessage = "Invalid email address";
-      } else if (error.code === 'auth/weak-password') {
-        errorMessage = "Password is too weak";
-      }
-      setError(errorMessage);
+      navigate("/");
+    } catch (signupError) {
+      setError(
+        ERROR_BY_CODE[signupError.code] ?? "Failed to create an account"
+      );
+      setLoading(false);
     }
-    setLoading(false);
   }
 
   return (
     <CenteredContainer>
-      <Card>
-        <Card.Body>
-          <h2 className="text-center mb-4"> Sign Up</h2>
-           {error && <Alert variant="danger">{error}</Alert>}
-          <Form onSubmit={handleSubmit}>
-            <Form.Group className="mt-3" id="email">
-              <Form.Label>Email</Form.Label>
-              <Form.Control type="email" ref={emailRef} required />
-            </Form.Group>
-            <Form.Group className="mt-3" id="password">
-              <Form.Label>Password</Form.Label>
-              <Form.Control type="password" ref={passwordRef} required />
-            </Form.Group>
-            <Form.Group className="mt-3" id="password-confirm">
-              <Form.Label>Password Confirm</Form.Label>
-              <Form.Control type="password" ref={passwordConfirmRef} required />
-            </Form.Group>
-            <Button disabled={loading} className="w-100 mt-3" type="submit">
-              Sign Up
-            </Button>
-          </Form>
-        </Card.Body>
-      </Card>
-
-      <div className="w-100 text-center mt-2">
-        Already have an account? <Link to="/login">Log In </Link>
+      <div className="auth-card">
+        <h1>Create an account</h1>
+        {error && <p className="alert-app alert-app--error">{error}</p>}
+        <form onSubmit={handleSubmit}>
+          <div className="auth-field">
+            <label htmlFor="signup-email">Email</label>
+            <input
+              id="signup-email"
+              type="email"
+              ref={emailRef}
+              autoComplete="email"
+              required
+            />
+          </div>
+          <div className="auth-field">
+            <label htmlFor="signup-password">Password</label>
+            <input
+              id="signup-password"
+              type="password"
+              ref={passwordRef}
+              autoComplete="new-password"
+              minLength={6}
+              required
+            />
+            <p className="auth-hint">At least 6 characters.</p>
+          </div>
+          <div className="auth-field">
+            <label htmlFor="signup-password-confirm">Confirm password</label>
+            <input
+              id="signup-password-confirm"
+              type="password"
+              ref={passwordConfirmRef}
+              autoComplete="new-password"
+              required
+            />
+          </div>
+          <button
+            type="submit"
+            className="btn-app btn-app--primary btn-app--block"
+            disabled={loading}
+          >
+            {loading ? "Creating…" : "Sign up"}
+          </button>
+        </form>
       </div>
+      <p className="auth-footer">
+        Already have an account? <Link to="/login">Log in</Link>
+      </p>
     </CenteredContainer>
   );
 }

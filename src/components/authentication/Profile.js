@@ -1,19 +1,19 @@
 import React, { useState } from "react";
-import { Alert, Button, Card } from "react-bootstrap";
-import { useAuth } from "../../context/AuthContext";
 import { Link, useNavigate } from "react-router-dom";
+
+import { useAuth } from "../../context/AuthContext";
 import CenteredContainer from "./CenteredContainer";
+
 export default function Profile() {
   const [error, setError] = useState("");
   const { currentUser, logout } = useAuth();
-  const history = useNavigate();
+  const navigate = useNavigate();
 
   async function handleLogout() {
     setError("");
-
     try {
       await logout();
-      history("/login");
+      navigate("/login");
     } catch {
       setError("Failed to log out");
     }
@@ -21,21 +21,33 @@ export default function Profile() {
 
   return (
     <CenteredContainer>
-      <Card>
-        <Card.Body>
-          <h2 className="text-center mb-4">Profile</h2>
-          {error && <Alert variant="danger">{error}</Alert>}
-          <strong>Email:</strong> {currentUser.email}
-          <Link to="/update-profile" className="btn btn-primary w-100 mt-3">
-            Update Profile
-          </Link>
-        </Card.Body>
-      </Card>
-      <div className="w-100 text-center mt-2">
-        <Button variant="link" onClick={handleLogout}>
-          Log Out
-        </Button>
+      <div className="auth-card">
+        <h1>Profile</h1>
+        {error && <p className="alert-app alert-app--error">{error}</p>}
+
+        <div className="profile-row">
+          <span className="profile-row__label">Email</span>
+          <span className="profile-row__value" title={currentUser.email}>
+            {currentUser.email}
+          </span>
+        </div>
+
+        <Link
+          to="/update-profile"
+          className="btn-app btn-app--primary btn-app--block"
+          style={{ marginTop: 20 }}
+        >
+          Update profile
+        </Link>
+        <Link to="/" className="btn-app btn-app--block" style={{ marginTop: 10 }}>
+          Back to my drive
+        </Link>
       </div>
+      <p className="auth-footer">
+        <button type="button" className="btn-app btn-app--ghost" onClick={handleLogout}>
+          Log out
+        </button>
+      </p>
     </CenteredContainer>
   );
 }

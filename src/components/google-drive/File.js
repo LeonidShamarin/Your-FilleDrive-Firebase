@@ -1,75 +1,126 @@
-import { faFile, faTrash } from "@fortawesome/free-solid-svg-icons";
-
+import React, { useState } from "react";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
-import React from "react";
+import {
+  faFile,
+  faFileImage,
+  faFileLines,
+  faFilePdf,
+  faFileZipper,
+  faTrash,
+} from "@fortawesome/free-solid-svg-icons";
+
 import { useAuth } from "../../context/AuthContext";
 import { database, storage } from "../../firebase";
+import ConfirmModal from "../ui/ConfirmModal";
+
+const IMAGE_EXTENSIONS = ["jpg", "jpeg", "png", "gif", "webp", "avif", "svg"];
+
+const ICON_BY_EXTENSION = {
+  pdf: faFilePdf,
+  txt: faFileLines,
+  md: faFileLines,
+  doc: faFileLines,
+  docx: faFileLines,
+  zip: faFileZipper,
+  rar: faFileZipper,
+  "7z": faFileZipper,
+};
+
+function getExtension(fileName) {
+  const parts = fileName.split(".");
+  return parts.length > 1 ? parts[parts.length - 1].toLowerCase() : "";
+}
 
 export default function File({ file }) {
   const { currentUser } = useAuth();
+  const [confirming, setConfirming] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [error, setError] = useState("");
 
-  const handleDelete = async () => {
+  const extension = getExtension(file.name);
+  const isImage = IMAGE_EXTENSIONS.includes(extension);
+  const icon = isImage
+    ? faFileImage
+    : ICON_BY_EXTENSION[extension] ?? faFile;
+
+  async function handleDelete() {
+    setDeleting(true);
+    setError("");
+    try {
+      // Storage object first: if the document goes first and this throws, the
+      // file is orphaned in the bucket with nothing left pointing at it.
+      await storage.refFromURL(file.url).delete();
+    } catch (storageError) {
+      // Already gone (or never uploaded) — the document should still go.
+      console.warn("Could not remove the stored object:", storageError);
+    }
+
     try {
       await database.files.doc(file.id).delete();
-      await storage.refFromURL(file.url).delete();
-    } catch (error) {
-      console.error("Error deleting file:", error);
+      setConfirming(false);
+    } catch (databaseError) {
+      console.error("Error deleting file:", databaseError);
+      setError("Could not delete this file. Try again.");
+    } finally {
+      setDeleting(false);
     }
-  };
-
-  const getFileType = (fileName) => {
-    const fileParts = fileName.split(".");
-    const fileExtension = fileParts[fileParts.length - 1].toLowerCase();
-    if (
-      fileExtension === "jpg" ||
-      fileExtension === "jpeg" ||
-      fileExtension === "png"
-    ) {
-      return "image";
-    } else {
-      return "other";
-    }
-  };
-
-  const fileType = getFileType(file.name);
-  const trimmedFileName =
-    file.name.length > 17 ? file.name.substring(0, 17) + "..." : file.name;
-  const fileUrl = `${file.url}`;
+  }
 
   return (
-    <div className="btn btn-outline-dark text-truncate w-100">
+    <div className="card-item">
       <a
-        href={fileUrl}
+        href={file.url}
         target="_blank"
         rel="noreferrer"
-        style={{
-          display: "flex",
-          flexDirection: "column",
-          alignItems: "center",
-        }}
+        className="card-item__link"
+        title={file.name}
       >
-        {fileType === "image" && (
-          <img
-            src={fileUrl}
-            alt={file.name}
-            style={{ width: "100px", height: "100px" }}
-          />
-        )}
-
-        {fileType !== "image" && (
-          <FontAwesomeIcon icon={faFile} className="mr-2" />
-        )}
-
-        <span style={{ paddingLeft: "1px" }}> {trimmedFileName} </span>
+        <span className="card-item__thumb">
+          {isImage ? (
+            <img src={file.url} alt="" loading="lazy" />
+          ) : (
+            <FontAwesomeIcon
+              icon={icon}
+              className="empty-state__icon"
+              aria-hidden="true"
+            />
+          )}
+        </span>
+        <span className="card-item__name">{file.name}</span>
       </a>
+
       {currentUser.uid === file.userId && (
         <button
-          className="btn btn-danger ml-auto align-items-center btn-sm"
-          onClick={handleDelete}
+          type="button"
+          className="card-item__delete"
+          onClick={() => setConfirming(true)}
+          aria-label={`Delete ${file.name}`}
         >
           <FontAwesomeIcon icon={faTrash} />
         </button>
       )}
+
+      <ConfirmModal
+        show={confirming}
+        busy={deleting}
+        title="Delete file"
+        body={
+          <>
+            <p>
+              <strong>{file.name}</strong> will be removed from your drive. This
+              cannot be undone.
+            </p>
+            {error && (
+              <p className="alert-app alert-app--error mt-3">{error}</p>
+            )}
+          </>
+        }
+        onConfirm={handleDelete}
+        onCancel={() => {
+          setConfirming(false);
+          setError("");
+        }}
+      />
     </div>
   );
 }

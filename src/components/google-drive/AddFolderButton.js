@@ -1,7 +1,8 @@
 import React, { useState } from "react";
-import { Button, Modal, Form } from "react-bootstrap";
+import { Modal } from "react-bootstrap";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faFolderPlus } from "@fortawesome/free-solid-svg-icons";
+
 import { database } from "../../firebase";
 import { useAuth } from "../../context/AuthContext";
 import { ROOT_FOLDER } from "../../hooks/useFolder";
@@ -9,71 +10,92 @@ import { ROOT_FOLDER } from "../../hooks/useFolder";
 export default function AddFolderButton({ currentFolder }) {
   const [open, setOpen] = useState(false);
   const [name, setName] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
   const { currentUser } = useAuth();
-
-  function openModal() {
-    setOpen(true);
-  }
 
   function closeModal() {
     setOpen(false);
+    setError("");
   }
 
-  function handleSubmit(e) {
+  async function handleSubmit(e) {
     e.preventDefault();
 
-    if (currentFolder == null) return;
+    const folderName = name.trim();
+    if (currentFolder == null || folderName === "") return;
 
-      // Prepare the path for the new folder
-      const newPath = currentFolder === ROOT_FOLDER ? [] : [...currentFolder.path];
-      if (currentFolder !== ROOT_FOLDER) {
-        newPath.push({ name: currentFolder.name, id: currentFolder.id });
-      }
+    // A folder's path is the chain of its ancestors, root excluded.
+    const isRoot = currentFolder === ROOT_FOLDER || currentFolder.id == null;
+    const newPath = isRoot
+      ? []
+      : [
+          ...(currentFolder.path ?? []),
+          { name: currentFolder.name, id: currentFolder.id },
+        ];
 
-    //Create a folder in the database
-    database.folders.add({
-      name: name,
-      parentId: currentFolder.id,
-      userId: currentUser.uid,
-      path: newPath,
-      createdAt: database.getCurrentTimestamp(),
-    });
-    setName("");
-    closeModal();
+    setSaving(true);
+    setError("");
+    try {
+      await database.folders.add({
+        name: folderName,
+        parentId: currentFolder.id,
+        userId: currentUser.uid,
+        path: newPath,
+        createdAt: database.getCurrentTimestamp(),
+      });
+      setName("");
+      closeModal();
+    } catch (submitError) {
+      console.error("Error creating folder:", submitError);
+      setError("Could not create the folder. Try again.");
+    } finally {
+      setSaving(false);
+    }
   }
 
   return (
     <>
-      <Button
-        onClick={openModal}
-        variant="outline-success"
-        size="sm"
-        className="m-2"
+      <button
+        type="button"
+        className="btn-app"
+        onClick={() => setOpen(true)}
+        disabled={currentFolder == null}
       >
         <FontAwesomeIcon icon={faFolderPlus} />
-      </Button>
-      <Modal show={open} onHide={closeModal}>
-        <Form onSubmit={handleSubmit}>
+        New folder
+      </button>
+
+      <Modal show={open} onHide={closeModal} centered>
+        <form onSubmit={handleSubmit}>
+          <Modal.Header>
+            <Modal.Title>New folder</Modal.Title>
+          </Modal.Header>
           <Modal.Body>
-            <Form.Group>
-              <Form.Label>Folder Name</Form.Label>
-              <Form.Control
-                type="text"
-                required
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-              />
-            </Form.Group>
+            {error && <p className="alert-app alert-app--error">{error}</p>}
+            <label htmlFor="folder-name">Folder name</label>
+            <input
+              id="folder-name"
+              type="text"
+              required
+              autoFocus
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+            />
           </Modal.Body>
           <Modal.Footer>
-            <Button variant="secondary" onClick={closeModal}>
-              Close
-            </Button>
-            <Button variant="success" type="submit">
-              Add Folder
-            </Button>
+            <button type="button" className="btn-app" onClick={closeModal}>
+              Cancel
+            </button>
+            <button
+              type="submit"
+              className="btn-app btn-app--primary"
+              disabled={saving || name.trim() === ""}
+            >
+              {saving ? "Creating…" : "Create folder"}
+            </button>
           </Modal.Footer>
-        </Form>
+        </form>
       </Modal>
     </>
   );
