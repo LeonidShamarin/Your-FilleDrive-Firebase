@@ -6,10 +6,12 @@ Everything a user stores is scoped to their own account.
 
 **Live:** https://shamarin-your-filledrive.vercel.app
 
-Built with React 18 and Firebase (Authentication, Cloud Firestore, Cloud
-Storage). No backend of its own — the browser talks to Firebase directly, and
-Firebase security rules are what actually separate one user's files from
-another's.
+Built with React 18. Firebase covers accounts and the folder tree
+(Authentication + Cloud Firestore), and Firebase security rules are what
+actually separate one user's documents from another's. The files themselves live
+in a private Supabase Storage bucket, reached through three small serverless
+functions — Cloud Storage left Firebase's no-cost plan in February 2025, and
+this project stays free without a billing card.
 
 ---
 
@@ -39,14 +41,16 @@ another's.
 
 ## How it works
 
-Two Firestore collections, no server code:
+Two Firestore collections, plus three functions in `api/` that exist only to
+hold the storage credential:
 
 | Collection | Fields |
 |---|---|
 | `folders` | `name`, `parentId` (`null` at the root), `userId`, `path` (ancestor `{id, name}` objects, root excluded), `createdAt` |
-| `files` | `name`, `url` (Storage download URL), `folderId`, `userId`, `createdAt` |
+| `files` | `name`, `path` (object path in the bucket), `url` (signed link, valid a year), `folderId`, `userId`, `createdAt` |
 
-Uploaded objects live in Storage under `files/{uid}/{folder path}/{file name}`.
+Uploaded objects live in the Supabase bucket under
+`{uid}/{folder path}/{file name}`.
 
 `src/hooks/useFolder.js` is the centre of the app: it resolves the folder from
 the URL, then keeps two `onSnapshot` listeners open — one for child folders, one
@@ -101,8 +105,15 @@ src/
     ui/               ConfirmModal — the confirmation dialog for destructive actions
   context/AuthContext.js   every call into Firebase Auth lives here
   hooks/useFolder.js       folder resolution + live child listeners
-  firebase.js              SDK setup, exports auth / database / storage
+  lib/remoteStorage.js     the three API calls, and the upload with progress
+  firebase.js              SDK setup, exports auth / database
   index.css                design tokens and all app styling
+api/
+  _verify.mjs              token verification, path scoping, Supabase helpers
+  upload-url.mjs           signs a one-shot upload URL
+  file-url.mjs             signs a download link for a file you own
+  delete-file.mjs          removes the stored object
+  health.mjs               which server-side variables the functions can see
 ```
 
 ---
@@ -113,22 +124,43 @@ Requires **Node 22** (the version the deployment builds with).
 
 ```bash
 npm install
-cp .env.local.example .env.local   # then fill in the values
-npm start
+cp .env.example .env.local   # then fill in the values
+npx vercel dev              # not `npm start` — see below
 ```
 
-`.env.local` holds the Firebase web config. These values are not secrets — they
-ship inside the client bundle by design — but they are kept out of the repo so
-the app can be pointed at a different Firebase project without editing code:
+**Use `vercel dev`, not `npm start`.** The dev server alone serves the app
+without `api/`, so every upload fails with a 404 that looks like an application
+bug.
+
+`.env.example` lists two groups of variables. The `REACT_APP_*` ones are the
+Firebase web config: not secrets — they ship inside the client bundle by
+design — but kept out of the repo so the app can be pointed at another Firebase
+project without editing code.
 
 ```
 REACT_APP_FIREBASE_API_KEY=
 REACT_APP_FIREBASE_AUTH_DOMAIN=
 REACT_APP_FIREBASE_PROJECT_ID=
-REACT_APP_FIREBASE_STORAGE_BUCKET=
 REACT_APP_FIREBASE_MESSAGING_SENDER_ID=
 REACT_APP_FIREBASE_APP_ID=
 ```
+
+The rest are read only by the functions and never reach the browser:
+
+```
+FIREBASE_PROJECT_ID=        # the SAME project as REACT_APP_FIREBASE_PROJECT_ID
+SUPABASE_URL=https://<project-ref>.supabase.co
+SUPABASE_SERVICE_ROLE_KEY=  # full access to the bucket — treat as a password
+SUPABASE_BUCKET=files
+```
+
+`FIREBASE_PROJECT_ID` must name the project the client signs in against. Point
+it at a different project of the same account and every upload fails with
+`Invalid token` while everything else looks correct — `/api/health` prints the
+value the functions actually see, for exactly this case.
+
+Put real values in `.env.local`, never in `.env.example`: the example file is
+tracked, and a key pasted there is a key on its way into the repository.
 
 ### Firebase project setup
 
@@ -137,8 +169,7 @@ REACT_APP_FIREBASE_APP_ID=
    collection (the console offers the exact link the first time a query fails):
    - `folders`: `userId` ASC, `parentId` ASC, `createdAt` ASC
    - `files`: `userId` ASC, `folderId` ASC, `createdAt` ASC
-3. **Storage** → create the default bucket.
-4. **Rules.** The `where("userId", "==", uid)` filters in the code are for
+3. **Rules.** The `where("userId", "==", uid)` filters in the code are for
    fetching the right documents, not for security — without rules anyone could
    read everything. Minimum viable set:
 
@@ -157,27 +188,32 @@ REACT_APP_FIREBASE_APP_ID=
    }
    ```
 
-   ```javascript
-   // Storage
-   rules_version = '2';
-   service firebase.storage {
-     match /b/{bucket}/o {
-       match /files/{userId}/{allPaths=**} {
-         allow read, write: if request.auth != null
-           && request.auth.uid == userId;
-       }
-     }
-   }
-   ```
+Firebase Storage needs no setup at all here — the project does not use it.
+
+### Supabase project setup
+
+1. Create a project; its ref is the `<project-ref>` in `SUPABASE_URL`.
+2. Create a **private** bucket named `files` (Storage → New bucket, *Public*
+   off). Nothing else is needed: no policies, because every request is made by
+   the functions with the service-role key, and no client ever talks to Supabase
+   with a credential of its own.
+3. Copy the **service_role** key from Settings → API into
+   `SUPABASE_SERVICE_ROLE_KEY`. It bypasses row-level security, so it belongs in
+   the functions' environment and nowhere near the client.
 
 ---
 
 ## Deployment
 
 Deployed on Vercel with the Create React App preset — build `npm run build`,
-output `build/`, SPA routing handled by the preset. The six `REACT_APP_*`
-variables are set in the project's environment variables; adding or changing one
-only takes effect after a redeploy.
+output `build/`, SPA routing handled by the preset, and the functions in `api/`
+picked up automatically. All nine variables above are set in the project's
+environment variables; adding or changing one **only takes effect after a
+redeploy**, which is worth remembering because the app keeps running with the
+old value until then.
+
+`GET /api/health` reports what the deployed functions can see — the Firebase
+project id as a value (it is public anyway) and the Supabase key as a boolean.
 
 The Node version is pinned in `package.json` (`engines.node: 22.x`) rather than
 in the Vercel dashboard, so it travels with the repository instead of living in
@@ -200,8 +236,9 @@ a UI setting that quietly goes stale.
 - **Folder deletion is capped** at 20 levels / 500 items per operation, and it
   is not a transaction: if it fails halfway, whatever was already removed stays
   removed.
-- **No file size or type validation** in the client — the practical limit is
-  whatever the Storage rules and the free tier allow.
+- **No file size or type validation in the client.** The bucket rejects
+  anything over **50 MB** and the free tier gives 1 GB in total, but the app
+  finds out only when the upload fails — it does not check before sending.
 - **Create React App is no longer maintained upstream.** The build works and is
   pinned to Node 22; a move to Vite is the obvious next step if this project
   gets developed further.
