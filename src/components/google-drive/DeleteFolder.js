@@ -3,7 +3,8 @@ import { useNavigate } from "react-router-dom";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faTrash } from "@fortawesome/free-solid-svg-icons";
 
-import { database, storage } from "../../firebase";
+import { database } from "../../firebase";
+import { removeStoredFile } from "../../lib/remoteStorage";
 import { useAuth } from "../../context/AuthContext";
 import { ROOT_FOLDER } from "../../hooks/useFolder";
 import ConfirmModal from "../ui/ConfirmModal";
@@ -83,10 +84,12 @@ export default function DeleteFolder({ currentFolder }) {
       // Files first: a stored object with no document left is invisible and
       // keeps costing storage.
       for (const fileDoc of files) {
-        const { url } = fileDoc.data();
-        if (url) {
+        // Documents written before the move to Supabase have no path — their
+        // objects sit in the abandoned Firebase bucket and cannot be reached.
+        const { path } = fileDoc.data();
+        if (path) {
           try {
-            await storage.refFromURL(url).delete();
+            await removeStoredFile(path);
           } catch (storageError) {
             console.warn("Stored object already gone:", storageError);
           }

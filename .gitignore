@@ -13,6 +13,10 @@
 
 # misc
 .DS_Store
+# Plain .env was not listed here, which is how a key ended up committed in a
+# sibling project. The example file stays tracked, real values never do.
+.env
+!.env.example
 .env.local
 .env.development.local
 .env.test.local

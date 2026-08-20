@@ -5,7 +5,12 @@ import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { v4 as uuidV4 } from "uuid";
 
 import { useAuth } from "../../context/AuthContext";
-import { storage, database } from "../../firebase";
+import { database } from "../../firebase";
+import {
+  requestUploadUrl,
+  requestFileUrl,
+  putWithProgress,
+} from "../../lib/remoteStorage";
 import { ROOT_FOLDER } from "../../hooks/useFolder";
 
 /**
@@ -39,7 +44,7 @@ export default function AddFileButton({ currentFolder }) {
     );
   }
 
-  function uploadOne(file) {
+  async function uploadOne(file) {
     const id = uuidV4();
     setUploadingFiles((previous) => [
       ...previous,
@@ -47,52 +52,43 @@ export default function AddFileButton({ currentFolder }) {
     ]);
 
     const prefix = folderStoragePath(currentFolder);
-    const fullPath = `/files/${currentUser.uid}/${
-      prefix ? `${prefix}/` : ""
-    }${file.name}`;
+    // No uid here: the function adds it from the verified token, so the client
+    // cannot aim an upload at another account's space.
+    const relativePath = `${prefix ? `${prefix}/` : ""}${file.name}`;
 
-    const uploadTask = storage.ref(fullPath).put(file);
+    try {
+      const { uploadUrl, path } = await requestUploadUrl(relativePath);
+      await putWithProgress(uploadUrl, file, (progress) =>
+        updateUpload(id, { progress })
+      );
 
-    uploadTask.on(
-      "state_changed",
-      (snapshot) => {
-        updateUpload(id, {
-          progress: snapshot.bytesTransferred / snapshot.totalBytes,
+      const { url } = await requestFileUrl(path);
+
+      // Same name in the same folder means a replacement, not a duplicate.
+      const existingFiles = await database.files
+        .where("name", "==", file.name)
+        .where("userId", "==", currentUser.uid)
+        .where("folderId", "==", currentFolder.id)
+        .get();
+
+      const existingFile = existingFiles.docs[0];
+      if (existingFile) {
+        await existingFile.ref.update({ url, path });
+      } else {
+        await database.files.add({
+          url,
+          path,
+          name: file.name,
+          createdAt: database.getCurrentTimestamp(),
+          folderId: currentFolder.id,
+          userId: currentUser.uid,
         });
-      },
-      (uploadError) => {
-        console.error("Upload failed:", uploadError);
-        updateUpload(id, { error: true });
-      },
-      async () => {
-        try {
-          const url = await uploadTask.snapshot.ref.getDownloadURL();
-          // Same name in the same folder means a replacement, not a duplicate.
-          const existingFiles = await database.files
-            .where("name", "==", file.name)
-            .where("userId", "==", currentUser.uid)
-            .where("folderId", "==", currentFolder.id)
-            .get();
-
-          const existingFile = existingFiles.docs[0];
-          if (existingFile) {
-            await existingFile.ref.update({ url });
-          } else {
-            await database.files.add({
-              url,
-              name: file.name,
-              createdAt: database.getCurrentTimestamp(),
-              folderId: currentFolder.id,
-              userId: currentUser.uid,
-            });
-          }
-          removeUpload(id);
-        } catch (saveError) {
-          console.error("Could not record the uploaded file:", saveError);
-          updateUpload(id, { error: true });
-        }
       }
-    );
+      removeUpload(id);
+    } catch (uploadError) {
+      console.error("Upload failed:", uploadError);
+      updateUpload(id, { error: true });
+    }
   }
 
   function handleUpload(e) {

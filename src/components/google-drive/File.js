@@ -10,7 +10,8 @@ import {
 } from "@fortawesome/free-solid-svg-icons";
 
 import { useAuth } from "../../context/AuthContext";
-import { database, storage } from "../../firebase";
+import { database } from "../../firebase";
+import { removeStoredFile } from "../../lib/remoteStorage";
 import ConfirmModal from "../ui/ConfirmModal";
 
 const IMAGE_EXTENSIONS = ["jpg", "jpeg", "png", "gif", "webp", "avif", "svg"];
@@ -49,7 +50,10 @@ export default function File({ file }) {
     try {
       // Storage object first: if the document goes first and this throws, the
       // file is orphaned in the bucket with nothing left pointing at it.
-      await storage.refFromURL(file.url).delete();
+      // Documents written before the move to Supabase carry no path — their
+      // objects live in the abandoned Firebase bucket, so there is nothing
+      // here to delete and the document should still go.
+      if (file.path) await removeStoredFile(file.path);
     } catch (storageError) {
       // Already gone (or never uploaded) — the document should still go.
       console.warn("Could not remove the stored object:", storageError);

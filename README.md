@@ -60,6 +60,37 @@ set, so a broken `parentId` chain cannot turn it into an endless loop. Past
 those limits the dialog asks you to delete some contents first rather than
 silently doing half the job.
 
+### Where files are stored
+
+Firebase covers authentication and Firestore, both of which stay on the no-cost
+Spark plan. It does **not** store the files: since February 2025 Cloud Storage
+requires the Blaze plan, and a Spark project loses access to its bucket, so
+every upload came back as `storage/quota-exceeded`.
+
+Files live in a **private Supabase Storage bucket** instead, reached through
+three serverless functions in `api/`:
+
+```
+browser --- POST /api/upload-url  (Firebase ID token) ---> verify token
+                                                           sign upload URL
+        <-- { uploadUrl, path } ------------------------------------------
+        --- PUT the file straight to Supabase ---------------------------->
+        --- POST /api/file-url ---> signed URL, valid a year
+Firestore <-- { name, path, url, folderId, userId }
+```
+
+The service-role key stays in the functions; the browser never sees it and
+never talks to Supabase with any credential of its own. The object path is
+built server-side as `<uid>/<folders>/<name>` from the **verified** token, so a
+caller cannot aim an upload at another account's space, and `/api/file-url` and
+`/api/delete-file` refuse any path that does not start with the caller's uid.
+
+Token verification uses `jose` against Google's public keys and needs only the
+project id — no Firebase service-account secret lives in this project.
+
+Because the API lives in `api/`, `npm start` alone serves the app without those
+endpoints; use `vercel dev` to run both.
+
 ### Project structure
 
 ```
@@ -156,15 +187,14 @@ a UI setting that quietly goes stale.
 
 ## Known limits
 
-- **Uploads need a Firebase project on the Blaze plan.** Since February 2025
-  Cloud Storage is no longer part of the no-cost Spark plan: a Spark project
-  loses read and write access to its bucket, and every upload comes back as
-  `storage/quota-exceeded`. Authentication and Firestore stay free, so accounts
-  and folders keep working while files do not. The app surfaces the failure per
-  file instead of hanging.
-- **A Storage download URL is a public link.** Anyone who has it can open the
-  file without signing in — that is how `getDownloadURL` works. The app never
-  shows another user's URLs, but a shared link is a shared file.
+- **A file link works without signing in.** The bucket is private, but the URL
+  stored on a file document is a signed one valid for a year — anyone holding it
+  can open that file. This is deliberate: it keeps opening a file a plain link
+  rather than a round trip through the API on every render. A shared link is a
+  shared file.
+- **Files uploaded before the move to Supabase are unreachable.** Their
+  documents carry a dead Firebase URL and no `path`, so the app cannot fetch or
+  delete the object; deleting such a file removes the document only.
 - **No sharing, renaming or moving.** Files and folders can only be created and
   deleted; there is no way to move an item between folders.
 - **Folder deletion is capped** at 20 levels / 500 items per operation, and it
