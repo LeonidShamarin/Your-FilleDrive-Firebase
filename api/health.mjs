@@ -1,11 +1,15 @@
 /*
- * Reports which server-side variables the functions can see. Booleans only —
- * never a value, not even a prefix. Without this, a missing variable surfaces
- * as an opaque 500 and the only way to tell them apart is guessing.
+ * Reports what the functions can see of their server-side configuration —
+ * values only where the value is already public, the Supabase key as a boolean.
+ * Without this, a missing or wrong variable surfaces as an opaque 500 and the
+ * only way to tell the cases apart is guessing.
  */
 export default function handler(req, res) {
   res.status(200).json({
-    FIREBASE_PROJECT_ID: Boolean(process.env.FIREBASE_PROJECT_ID),
+    // The value, not a boolean: this id is public — it ships in the client
+    // bundle — and a mismatch with the project that issued the token is the
+    // failure this endpoint exists to make visible.
+    FIREBASE_PROJECT_ID: process.env.FIREBASE_PROJECT_ID ?? "(unset)",
     SUPABASE_URL: Boolean(process.env.SUPABASE_URL),
     SUPABASE_SERVICE_ROLE_KEY: Boolean(process.env.SUPABASE_SERVICE_ROLE_KEY),
     SUPABASE_BUCKET: process.env.SUPABASE_BUCKET ?? "(unset, defaults to files)",

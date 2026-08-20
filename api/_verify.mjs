@@ -37,7 +37,13 @@ export async function requireUid(req) {
       audience: projectId,
     }));
   } catch {
-    throw new HttpError(401, "Invalid token");
+    // Naming the expected project turns the commonest misconfiguration — a
+    // token issued by one Firebase project, verified against another — into a
+    // readable message. The id is public; it ships in the client bundle.
+    throw new HttpError(
+      401,
+      `Invalid token (expected one issued by Firebase project "${projectId}")`
+    );
   }
 
   const uid = payload.user_id ?? payload.sub;
